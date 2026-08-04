@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <div class="heading">
+        <span class="badge">MOBI → PDF</span>
+        <h1>{{ app_name }}</h1>
+        <p>Chọn file MOBI, thiết lập PDF và tải kết quả ngay sau khi chuyển đổi.</p>
+      </div>
+
+      <div id="service-status" class="service-status">Đang kiểm tra Calibre…</div>
+
+      <form id="convert-form" action="/api/v1/convert" method="post" enctype="multipart/form-data">
+        <label id="drop-zone" class="drop-zone" for="file-input">
+          <input id="file-input" name="file" type="file" accept=".mobi,application/x-mobipocket-ebook" required>
+          <strong id="file-label">Kéo thả file MOBI vào đây</strong>
+          <span>hoặc bấm để chọn file · tối đa {{ max_upload_mb }} MB</span>
+        </label>
+
+        <div class="settings-grid">
+          <label>
+            Khổ giấy
+            <select name="paper_size">
+              {% for size in paper_sizes %}
+              <option value="{{ size }}" {% if size == default_paper_size %}selected{% endif %}>{{ size|upper }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label>
+            Lề trang (pt)
+            <input name="margin_pt" type="number" min="0" max="144" value="{{ default_margin_pt }}">
+          </label>
+        </div>
+
+        <div class="checkboxes">
+          <label><input name="add_page_numbers" type="checkbox" value="true" {% if default_add_page_numbers %}checked{% endif %}> Thêm số trang</label>
+          <label><input name="add_toc" type="checkbox" value="true" {% if default_add_toc %}checked{% endif %}> Thêm mục lục in</label>
+        </div>
+
+        <button id="submit-button" type="submit">Chuyển đổi sang PDF</button>
+        <div id="progress" class="progress" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <span>Đang chuyển đổi…</span>
+        </div>
+        <p id="message" class="message" role="status"></p>
+      </form>
+    </section>
+
+    <p class="footer-note">File tạm được xóa sau khi phản hồi tải xuống hoàn tất.</p>
+  </main>
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</body>
+</html>

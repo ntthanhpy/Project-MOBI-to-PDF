@@ -1,0 +1,9 @@
+services:
+  converter:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      MAX_UPLOAD_MB: "100"
+      CONVERSION_TIMEOUT_SECONDS: "300"
+    restart: unless-stopped
