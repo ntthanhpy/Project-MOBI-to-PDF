@@ -1,15 +1,32 @@
 from __future__ import annotations
 
+import queue
 import shutil
 import subprocess
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 
 SUPPORTED_PAPER_SIZES = {
-    "a0", "a1", "a2", "a3", "a4", "a5", "a6",
-    "b0", "b1", "b2", "b3", "b4", "b5", "b6",
-    "legal", "letter",
+    "a0",
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "b0",
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5",
+    "b6",
+    "legal",
+    "letter",
 }
 
 
@@ -77,6 +94,15 @@ def build_command(
     return command
 
 
+def _terminate_process(process: subprocess.Popen[str]) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+
+
 def convert_mobi_to_pdf(
     input_path: Path,
     output_path: Path,
@@ -84,6 +110,7 @@ def convert_mobi_to_pdf(
     options: PdfOptions,
     calibre_command: str = "ebook-convert",
     timeout_seconds: int = 300,
+    log_callback: Callable[[str], None] | None = None,
 ) -> Path:
     if input_path.suffix.lower() != ".mobi":
         raise ValueError("Input file must have a .mobi extension")
@@ -99,29 +126,70 @@ def convert_mobi_to_pdf(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     command = build_command(input_path, output_path, options, calibre_command)
+    output_lines: list[str] = []
+    line_queue: queue.Queue[str | None] = queue.Queue()
 
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
-            check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout_seconds,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
             shell=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        output_path.unlink(missing_ok=True)
-        raise ConversionTimeoutError(
-            f"Conversion exceeded {timeout_seconds} seconds"
-        ) from exc
     except OSError as exc:
         output_path.unlink(missing_ok=True)
         raise ConversionError(f"Unable to start Calibre: {exc}") from exc
 
-    if result.returncode != 0 or not output_path.is_file():
+    def read_output() -> None:
+        assert process.stdout is not None
+        try:
+            for raw_line in process.stdout:
+                line_queue.put(raw_line.rstrip())
+        finally:
+            line_queue.put(None)
+
+    reader = threading.Thread(target=read_output, name="calibre-log-reader", daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout_seconds
+    reader_finished = False
+
+    try:
+        while process.poll() is None or not reader_finished:
+            if process.poll() is None and time.monotonic() >= deadline:
+                _terminate_process(process)
+                output_path.unlink(missing_ok=True)
+                raise ConversionTimeoutError(
+                    f"Conversion exceeded {timeout_seconds} seconds"
+                )
+
+            try:
+                line = line_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if line is None:
+                reader_finished = True
+                continue
+
+            clean_line = line.strip()
+            if clean_line:
+                output_lines.append(clean_line)
+                if len(output_lines) > 300:
+                    output_lines.pop(0)
+                if log_callback is not None:
+                    log_callback(clean_line)
+    finally:
+        reader.join(timeout=1)
+        if process.stdout is not None:
+            process.stdout.close()
+
+    if process.returncode != 0 or not output_path.is_file():
         output_path.unlink(missing_ok=True)
-        details = (result.stderr or result.stdout or "Unknown Calibre error").strip()
-        # Avoid returning an unexpectedly massive Calibre log to clients.
+        details = "\n".join(output_lines[-40:]).strip() or "Unknown Calibre error"
         details = details[-4000:]
         raise ConversionError(f"Calibre conversion failed: {details}")
 

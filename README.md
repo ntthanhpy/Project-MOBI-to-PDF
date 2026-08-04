@@ -4,8 +4,10 @@ Project chuyển đổi sách điện tử `.mobi` sang `.pdf` bằng **FastAPI*
 
 ## Tính năng
 
-- Giao diện web kéo-thả file MOBI.
-- API `POST /api/v1/convert` trả trực tiếp file PDF.
+- Giao diện web responsive hai cột, kéo-thả file MOBI.
+- Theo dõi upload, phần trăm xử lý, thời gian chạy và log Calibre trực tiếp trên web.
+- API job bất đồng bộ: tạo job, đọc trạng thái/log và tải PDF khi hoàn tất.
+- API `POST /api/v1/convert` đồng bộ vẫn được giữ để tương thích script cũ.
 - CLI cho batch/script automation.
 - Chọn khổ giấy, lề trang, số trang và mục lục in.
 - Giới hạn dung lượng upload, timeout chuyển đổi và kiểm tra định dạng.
@@ -25,9 +27,11 @@ FastAPI upload endpoint
         |
         +-- validate extension, size and PDF options
         +-- save into isolated temporary directory
+        +-- create an in-memory conversion job
         +-- run Calibre ebook-convert without a shell
-        +-- stream PDF response
-        +-- delete temporary directory
+        +-- collect progress/log output
+        +-- expose job status for browser polling
+        +-- download PDF and delete temporary directory
 ```
 
 ## Cách 1 — Chạy nhanh bằng Docker
@@ -85,7 +89,28 @@ python -m app.cli input.mobi output.pdf \
   --add-toc
 ```
 
-## Gọi API
+## Theo dõi trạng thái và log trên web
+
+Giao diện web sử dụng luồng job bất đồng bộ:
+
+1. `POST /api/v1/jobs` upload file và trả về `job_id`.
+2. Trình duyệt gọi `GET /api/v1/jobs/{job_id}` mỗi 800 ms để cập nhật tiến độ và log.
+3. Khi `status=completed`, PDF được tải từ `GET /api/v1/jobs/{job_id}/download`.
+4. Thư mục tạm và job được xóa sau khi phản hồi download hoàn tất. Job hoàn tất nhưng chưa tải sẽ tự hết hạn sau khoảng một giờ.
+
+Các trạng thái gồm `queued`, `processing`, `completed` và `failed`. Log bao gồm quá trình upload phía trình duyệt, kiểm tra Calibre và từng dòng output của `ebook-convert`.
+
+### GitHub Codespaces
+
+Chạy server bằng địa chỉ `0.0.0.0` để port forwarding hoạt động:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Mở tab **Ports**, đặt port `8000` thành `Private` hoặc `Public` theo nhu cầu rồi chọn **Open in Browser**. Static assets dùng đường dẫn cùng origin `/static/...`, vì vậy không còn trỏ nhầm tới `localhost:8000` khi mở qua domain `app.github.dev`.
+
+## Gọi API đồng bộ
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/convert \
@@ -127,7 +152,8 @@ Các test API mock engine Calibre nên không cần file MOBI thật.
 
 - Đặt reverse proxy như Nginx/Traefik phía trước nếu public Internet.
 - Thêm authentication và rate limit.
-- Chạy một worker hoặc giới hạn concurrency vì chuyển đổi ebook tốn CPU/RAM.
+- Chạy một Uvicorn worker khi dùng job store trong bộ nhớ hiện tại; Dockerfile đã cấu hình `--workers 1`.
+- Giới hạn concurrency vì chuyển đổi ebook tốn CPU/RAM.
 - Đẩy job sang hàng đợi như Celery/RQ nếu cần xử lý nhiều file đồng thời.
 - Không ghi log nội dung file hoặc đường dẫn nhạy cảm.
 - Quét malware nếu cho phép người dùng không tin cậy upload file.

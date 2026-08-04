@@ -3,59 +3,214 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Chuyển đổi file MOBI sang PDF và theo dõi log xử lý theo thời gian thực.">
   <title>{{ app_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=2">
 </head>
 <body>
-  <main class="container">
-    <section class="card">
-      <div class="heading">
-        <span class="badge">MOBI → PDF</span>
-        <h1>{{ app_name }}</h1>
-        <p>Chọn file MOBI, thiết lập PDF và tải kết quả ngay sau khi chuyển đổi.</p>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Trang chủ MOBI to PDF Converter">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M6 3.75h8.5L19 8.2v12.05H6V3.75Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M14.5 3.75V8.2H19M9 12h7M9 15.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span>
+          <strong>MOBI → PDF</strong>
+          <small>Calibre conversion workspace</small>
+        </span>
+      </a>
+
+      <div id="service-status" class="service-pill checking" aria-live="polite">
+        <span class="status-dot"></span>
+        <span>Đang kiểm tra Calibre…</span>
       </div>
+    </header>
 
-      <div id="service-status" class="service-status">Đang kiểm tra Calibre…</div>
-
-      <form id="convert-form" action="/api/v1/convert" method="post" enctype="multipart/form-data">
-        <label id="drop-zone" class="drop-zone" for="file-input">
-          <input id="file-input" name="file" type="file" accept=".mobi,application/x-mobipocket-ebook" required>
-          <strong id="file-label">Kéo thả file MOBI vào đây</strong>
-          <span>hoặc bấm để chọn file · tối đa {{ max_upload_mb }} MB</span>
-        </label>
-
-        <div class="settings-grid">
-          <label>
-            Khổ giấy
-            <select name="paper_size">
-              {% for size in paper_sizes %}
-              <option value="{{ size }}" {% if size == default_paper_size %}selected{% endif %}>{{ size|upper }}</option>
-              {% endfor %}
-            </select>
-          </label>
-
-          <label>
-            Lề trang (pt)
-            <input name="margin_pt" type="number" min="0" max="144" value="{{ default_margin_pt }}">
-          </label>
+    <main>
+      <section class="hero">
+        <div>
+          <span class="eyebrow">E-book conversion</span>
+          <h1>Chuyển MOBI sang PDF<br><span>rõ trạng thái từng bước.</span></h1>
+          <p>Upload sách, tùy chỉnh PDF và theo dõi log Calibre trực tiếp ngay trên giao diện.</p>
         </div>
-
-        <div class="checkboxes">
-          <label><input name="add_page_numbers" type="checkbox" value="true" {% if default_add_page_numbers %}checked{% endif %}> Thêm số trang</label>
-          <label><input name="add_toc" type="checkbox" value="true" {% if default_add_toc %}checked{% endif %}> Thêm mục lục in</label>
+        <div class="hero-metric" aria-label="Thông tin giới hạn upload">
+          <span>Tối đa</span>
+          <strong>{{ max_upload_mb }} MB</strong>
+          <small>mỗi file MOBI</small>
         </div>
+      </section>
 
-        <button id="submit-button" type="submit">Chuyển đổi sang PDF</button>
-        <div id="progress" class="progress" hidden>
-          <div class="spinner" aria-hidden="true"></div>
-          <span>Đang chuyển đổi…</span>
-        </div>
-        <p id="message" class="message" role="status"></p>
-      </form>
-    </section>
+      <section class="workspace">
+        <article class="panel converter-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="section-number">01</span>
+              <h2>Thiết lập chuyển đổi</h2>
+            </div>
+            <span class="secure-note">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3.5 19 6v5.4c0 4.3-2.7 7.5-7 9.1-4.3-1.6-7-4.8-7-9.1V6l7-2.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                <path d="m9.3 12 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              File tạm tự xóa
+            </span>
+          </div>
 
-    <p class="footer-note">File tạm được xóa sau khi phản hồi tải xuống hoàn tất.</p>
-  </main>
-  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+          <form id="convert-form" action="/api/v1/jobs" method="post" enctype="multipart/form-data">
+            <label id="drop-zone" class="drop-zone" for="file-input">
+              <input id="file-input" name="file" type="file" accept=".mobi,application/x-mobipocket-ebook" required>
+              <span class="upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 16V5m0 0L8 9m4-4 4 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M5 15.5v2.75A1.75 1.75 0 0 0 6.75 20h10.5A1.75 1.75 0 0 0 19 18.25V15.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <strong id="file-label">Thả file MOBI vào đây</strong>
+              <span id="file-helper">hoặc bấm để chọn file · tối đa {{ max_upload_mb }} MB</span>
+              <span class="browse-chip">Chọn file</span>
+            </label>
+
+            <div id="selected-file" class="selected-file" hidden>
+              <span class="file-type">MOBI</span>
+              <div>
+                <strong id="selected-file-name"></strong>
+                <span id="selected-file-size"></span>
+              </div>
+              <button id="remove-file" class="icon-button" type="button" aria-label="Bỏ file đã chọn">×</button>
+            </div>
+
+            <div class="options-title">
+              <span>Tùy chọn PDF</span>
+              <small>Có thể giữ mặc định để chuyển nhanh</small>
+            </div>
+
+            <div class="settings-grid">
+              <label class="field">
+                <span>Khổ giấy</span>
+                <select name="paper_size">
+                  {% for size in paper_sizes %}
+                  <option value="{{ size }}" {% if size == default_paper_size %}selected{% endif %}>{{ size|upper }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Lề trang</span>
+                <div class="input-suffix">
+                  <input name="margin_pt" type="number" min="0" max="144" value="{{ default_margin_pt }}">
+                  <span>pt</span>
+                </div>
+              </label>
+            </div>
+
+            <div class="toggle-list">
+              <label class="toggle-row">
+                <span>
+                  <strong>Thêm số trang</strong>
+                  <small>Hiển thị số trang trong PDF đầu ra</small>
+                </span>
+                <input name="add_page_numbers" type="checkbox" value="true" {% if default_add_page_numbers %}checked{% endif %}>
+                <span class="toggle" aria-hidden="true"></span>
+              </label>
+
+              <label class="toggle-row">
+                <span>
+                  <strong>Thêm mục lục in</strong>
+                  <small>Chèn mục lục có số trang vào cuối PDF</small>
+                </span>
+                <input name="add_toc" type="checkbox" value="true" {% if default_add_toc %}checked{% endif %}>
+                <span class="toggle" aria-hidden="true"></span>
+              </label>
+            </div>
+
+            <button id="submit-button" class="primary-button" type="submit">
+              <span>Chuyển đổi sang PDF</span>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <p id="form-message" class="form-message" role="alert"></p>
+          </form>
+        </article>
+
+        <article class="panel monitor-panel">
+          <div class="panel-heading monitor-heading">
+            <div>
+              <span class="section-number">02</span>
+              <h2>Trạng thái xử lý</h2>
+            </div>
+            <span id="job-status-badge" class="job-badge idle">Chưa chạy</span>
+          </div>
+
+          <div class="progress-card">
+            <div class="progress-summary">
+              <div>
+                <span id="progress-stage">Sẵn sàng nhận file</span>
+                <strong id="progress-percent">0%</strong>
+              </div>
+              <span id="elapsed-time">00:00</span>
+            </div>
+            <div class="progress-track" aria-label="Tiến độ chuyển đổi">
+              <span id="progress-bar" style="width: 0%"></span>
+            </div>
+            <div class="steps" aria-label="Các bước xử lý">
+              <span class="step active" data-step="upload"><i></i>Upload</span>
+              <span class="step" data-step="validate"><i></i>Kiểm tra</span>
+              <span class="step" data-step="convert"><i></i>Chuyển đổi</span>
+              <span class="step" data-step="done"><i></i>Hoàn tất</span>
+            </div>
+          </div>
+
+          <div id="result-card" class="result-card" hidden>
+            <span class="result-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M20 11.1V12a8 8 0 1 1-4.74-7.31" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="m8.7 11.7 2.2 2.2L20 4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <div>
+              <strong>PDF đã sẵn sàng</strong>
+              <span id="result-filename"></span>
+            </div>
+            <a id="download-button" class="download-button" href="#">Tải PDF</a>
+          </div>
+
+          <div class="log-card">
+            <div class="log-toolbar">
+              <div>
+                <span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <strong>Processing log</strong>
+              </div>
+              <div>
+                <button id="copy-log" class="text-button" type="button">Sao chép</button>
+                <button id="clear-log" class="text-button" type="button">Xóa log</button>
+              </div>
+            </div>
+            <div id="log-output" class="log-output" role="log" aria-live="polite" aria-label="Log chuyển đổi">
+              <div class="log-line muted">
+                <time>--:--:--</time>
+                <span>Chọn một file MOBI để bắt đầu.</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="monitor-note">
+            Log được lấy từ các bước upload, kiểm tra và tiến trình <code>ebook-convert</code>.
+          </p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <span>Built with FastAPI + Calibre</span>
+      <span>Không hỗ trợ file có DRM</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js?v=2" defer></script>
 </body>
 </html>
